@@ -277,10 +277,18 @@ export async function handleAuthCallback(clientId) {
     (typeof claims?.upn === "string" && claims.upn) ||
     "";
 
+  const grantedScopes = typeof tokenData.scope === "string" ? tokenData.scope : "";
+  if (grantedScopes && !/\btasks\.read\b/i.test(grantedScopes)) {
+    throw new Error(
+      `Microsoft sign-in succeeded, but read-only To Do permission was not granted (received scopes: ${grantedScopes}).`
+    );
+  }
+
   const expiresInSeconds = Number(tokenData.expires_in) || 3600;
   const session = {
     accessToken: tokenData.access_token,
     expiresAt: Date.now() + expiresInSeconds * 1000,
+    grantedScopes,
     user: { name, email },
   };
 

@@ -149,6 +149,7 @@ test("exportAllTodos paginates lists & tasks, strips @odata keys, and includes a
     listCount: 2,
     taskCount: 2,
     attachmentCount: 1,
+    tasksWithUnavailableAttachments: 0,
   });
 
   const firstTask = result.lists[0].tasks[0];
@@ -218,7 +219,52 @@ test("exportAllTodos falls back cleanly on HTTP 400 from combined $filter + $exp
   assert.equal(result.lists[0].tasks[0].id, "open-1");
 });
 
-test("exportAllTodos throws AuthExpiredError on HTTP 401", async () => {
+test("exportAllTodos skips unavailable attachments on 401 accessDenied without aborting export", async () => {
+  const fetchImpl = async (url) => {
+    if (url.endsWith("/me/todo/lists?$top=100")) {
+      return jsonResponse({
+        value: [{ id: "list-1", displayName: "Tasks", isOwner: true, isShared: false }],
+      });
+    }
+    if (url.includes("/lists/list-1/tasks?")) {
+      return jsonResponse({
+        value: [
+          {
+            id: "task-old",
+            title: "Completed task with blocked attachment",
+            status: "completed",
+            hasAttachments: true,
+            checklistItems: [],
+            linkedResources: [],
+          },
+        ],
+      });
+    }
+    if (url.endsWith("/tasks/task-old/attachments")) {
+      return jsonResponse(
+        { error: { code: "accessDenied", message: "Access denied" } },
+        { status: 401 }
+      );
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+
+  const result = await exportAllTodos({
+    accessToken: "valid-token",
+    includeCompleted: true,
+    fetchImpl,
+    sleepImpl: async () => {},
+  });
+
+  assert.equal(result.summary.taskCount, 1);
+  assert.equal(result.summary.attachmentCount, 0);
+  assert.equal(result.summary.tasksWithUnavailableAttachments, 1);
+  assert.equal(result.lists[0].tasks[0].hasAttachments, true);
+  assert.equal(result.lists[0].tasks[0].attachmentsUnavailable, true);
+  assert.deepEqual(result.lists[0].tasks[0].attachments, []);
+});
+
+test("exportAllTodos throws AuthExpiredError on empty or expired HTTP 401", async () => {
   const fetchImpl = async () => jsonResponse({}, { status: 401 });
 
   await assert.rejects(
@@ -230,5 +276,29 @@ test("exportAllTodos throws AuthExpiredError on HTTP 401", async () => {
         sleepImpl: async () => {},
       }),
     AuthExpiredError
+  );
+});
+
+test("exportAllTodos surfaces real Microsoft error detail on non-expiry HTTP 401", async () => {
+  const fetchImpl = async () =>
+    jsonResponse(
+      {
+        error: {
+          code: "MailboxNotEnabledForRESTAPI",
+          message: "The mailbox is either inactive, soft-deleted, or is hosted on-premise.",
+        },
+      },
+      { status: 401 }
+    );
+
+  await assert.rejects(
+    () =>
+      exportAllTodos({
+        accessToken: "valid-token",
+        includeCompleted: true,
+        fetchImpl,
+        sleepImpl: async () => {},
+      }),
+    /MailboxNotEnabledForRESTAPI/
   );
 });

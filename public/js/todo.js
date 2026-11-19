@@ -50,10 +50,6 @@ export async function fetchGraphJson(
       },
     });
 
-    if (response.status === 401) {
-      throw new AuthExpiredError();
-    }
-
     if ((response.status === 429 || response.status === 503 || response.status === 504) && attempt < maxRetries) {
       const waitMs = parseRetryAfterMs(response.headers?.get("Retry-After"), attempt);
       await sleepImpl(waitMs);
@@ -65,6 +61,42 @@ export async function fetchGraphJson(
       data = await response.json();
     } catch {
       data = null;
+    }
+
+    if (response.status === 401) {
+      const code = data?.error?.code || "";
+      const detail = data?.error?.message || "";
+      const wwwAuth = response.headers?.get("www-authenticate") || "";
+      const endpointPath = safeEndpointPath(url);
+      console.error("Microsoft returned HTTP 401:", {
+        url,
+        endpointPath,
+        code,
+        detail,
+        wwwAuth,
+        data,
+      });
+
+      const looksExpired =
+        !detail ||
+        /expired|lifetime validation failed/i.test(detail) ||
+        /expired/i.test(wwwAuth);
+
+      if (looksExpired) {
+        throw new AuthExpiredError(
+          detail
+            ? `Your Microsoft session expired (${code || "401"}: ${detail}). Please sign in again.`
+            : undefined
+        );
+      }
+
+      const error = new Error(
+        `Access was rejected by Microsoft (${code || "401"}): ${detail}`
+      );
+      error.status = 401;
+      error.code = code;
+      error.endpointPath = endpointPath;
+      throw error;
     }
 
     if (!response.ok) {
@@ -140,7 +172,7 @@ export function cleanAttachmentMetadata(rawAttachment) {
  * @param {Record<string, unknown>} rawTask
  * @param {Array<Record<string, unknown>>} attachments
  */
-export function cleanTask(rawTask, attachments = []) {
+export function cleanTask(rawTask, attachments = [], { attachmentsUnavailable = false } = {}) {
   const cleaned = stripODataKeys(rawTask);
 
   const checklistItems = Array.isArray(cleaned.checklistItems)
@@ -150,7 +182,7 @@ export function cleanTask(rawTask, attachments = []) {
     ? cleaned.linkedResources
     : [];
 
-  return {
+  const result = {
     id: cleaned.id ?? null,
     title: cleaned.title ?? "",
     status: cleaned.status ?? null,
@@ -171,6 +203,12 @@ export function cleanTask(rawTask, attachments = []) {
     linkedResources,
     attachments: attachments.map(cleanAttachmentMetadata),
   };
+
+  if (attachmentsUnavailable) {
+    result.attachmentsUnavailable = true;
+  }
+
+  return result;
 }
 
 /**
@@ -258,15 +296,26 @@ export async function fetchTasksForList(listId, accessToken, includeCompleted, o
     }
 
     let attachments = [];
+    let attachmentsUnavailable = false;
     if (taskCopy.hasAttachments) {
-      attachments = await fetchAllPages(
-        `${baseTasksUrl}/${encodedTaskId}/attachments`,
-        accessToken,
-        options
-      );
+      try {
+        attachments = await fetchAllPages(
+          `${baseTasksUrl}/${encodedTaskId}/attachments`,
+          accessToken,
+          options
+        );
+      } catch (attErr) {
+        if (attErr instanceof AuthExpiredError) {
+          throw attErr;
+        }
+        // Personal accounts occasionally reject attachment metadata reads (401/403 accessDenied)
+        // on older or email-linked tasks; skip attachment details rather than aborting the export.
+        console.warn("Skipping unavailable attachment metadata for task:", rawTask.id, attErr);
+        attachmentsUnavailable = true;
+      }
     }
 
-    tasks.push(cleanTask(taskCopy, attachments));
+    tasks.push(cleanTask(taskCopy, attachments, { attachmentsUnavailable }));
   }
 
   return tasks;
@@ -300,6 +349,7 @@ export async function exportAllTodos({
   const exportedLists = [];
   let totalTasks = 0;
   let totalAttachments = 0;
+  let tasksWithUnavailableAttachments = 0;
 
   for (let i = 0; i < rawLists.length; i += 1) {
     const rawList = rawLists[i];
@@ -314,6 +364,9 @@ export async function exportAllTodos({
     totalTasks += tasks.length;
     for (const task of tasks) {
       totalAttachments += task.attachments.length;
+      if (task.attachmentsUnavailable) {
+        tasksWithUnavailableAttachments += 1;
+      }
     }
 
     exportedLists.push(cleanList(rawList, tasks));
@@ -330,6 +383,7 @@ export async function exportAllTodos({
       listCount: exportedLists.length,
       taskCount: totalTasks,
       attachmentCount: totalAttachments,
+      tasksWithUnavailableAttachments,
     },
     lists: exportedLists,
   };
@@ -337,4 +391,13 @@ export async function exportAllTodos({
 
 function defaultSleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function safeEndpointPath(rawUrl) {
+  try {
+    const parsed = new URL(rawUrl);
+    return parsed.pathname.replace(/^\/v1\.0/, "");
+  } catch {
+    return rawUrl;
+  }
 }
