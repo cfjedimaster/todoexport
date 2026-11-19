@@ -1,0 +1,14 @@
+{
+  "name": "todoexport",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Export all your Microsoft To Do lists and tasks to a local JSON file.",
+  "scripts": {
+    "dev": "netlify dev",
+    "test": "node --test tests/*.test.js"
+  },
+  "devDependencies": {
+    "@netlify/functions": "^3.0.0"
+  }
+}
