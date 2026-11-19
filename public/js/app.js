@@ -5,9 +5,21 @@ import {
   loadAppConfig,
   startLogin,
 } from "./auth.js";
+import { buildHtmlExport } from "./html-export.js";
 import { AuthExpiredError, exportAllTodos } from "./todo.js";
 
-const EXPORT_FILENAME = "todo-export.json";
+const FORMATS = {
+  json: {
+    filename: "todo-export.json",
+    mimeType: "application/json;charset=utf-8",
+    label: "JSON",
+  },
+  html: {
+    filename: "todo-export.html",
+    mimeType: "text/html;charset=utf-8",
+    label: "HTML",
+  },
+};
 
 const ui = {
   errorBanner: document.querySelector("#error-banner"),
@@ -36,11 +48,13 @@ const ui = {
   successBanner: document.querySelector("#success-banner"),
   successMessage: document.querySelector("#success-message"),
   btnDownloadAgain: document.querySelector("#btn-download-again"),
+  btnDownloadOther: document.querySelector("#btn-download-other"),
 };
 
 let clientId = null;
 let currentSession = null;
-let lastExportJson = null;
+let lastExportData = null;
+let lastExportFormat = "json";
 
 function showError(message) {
   ui.errorMessage.textContent = message;
@@ -95,8 +109,8 @@ function setFormBusy(busy) {
   ui.btnExport.textContent = busy ? "Exporting…" : "Export To Dos";
 }
 
-function triggerJsonDownload(jsonString, filename = EXPORT_FILENAME) {
-  const blob = new Blob([jsonString], { type: "application/json;charset=utf-8" });
+function triggerFileDownload(content, { filename, mimeType }) {
+  const blob = new Blob([content], { type: mimeType });
   const objectUrl = URL.createObjectURL(blob);
 
   const link = document.createElement("a");
@@ -111,7 +125,17 @@ function triggerJsonDownload(jsonString, filename = EXPORT_FILENAME) {
   setTimeout(() => URL.revokeObjectURL(objectUrl), 10_000);
 }
 
-function formatSummaryText(summary) {
+function serializeAndDownload(exportData, formatKey) {
+  const format = FORMATS[formatKey] || FORMATS.json;
+  const content =
+    formatKey === "html"
+      ? buildHtmlExport(exportData)
+      : `${JSON.stringify(exportData, null, 2)}\n`;
+  triggerFileDownload(content, format);
+  return format;
+}
+
+function formatSummaryText(summary, filename) {
   const listWord = summary.listCount === 1 ? "list" : "lists";
   const taskWord = summary.taskCount === 1 ? "task" : "tasks";
   const parts = [`${summary.listCount} ${listWord}`, `${summary.taskCount} ${taskWord}`];
@@ -121,7 +145,17 @@ function formatSummaryText(summary) {
     parts.push(`${summary.attachmentCount} ${attachmentWord} (metadata only)`);
   }
 
-  return `Export complete! ${EXPORT_FILENAME} has been downloaded with ${parts.join(", ")}.`;
+  return `Export complete! ${filename} has been downloaded with ${parts.join(", ")}.`;
+}
+
+function updateDownloadButtons(primaryFormat) {
+  const current = FORMATS[primaryFormat] || FORMATS.json;
+  const otherKey = primaryFormat === "html" ? "json" : "html";
+  const other = FORMATS[otherKey];
+
+  ui.btnDownloadAgain.textContent = `Download ${current.filename} again`;
+  ui.btnDownloadOther.textContent = `Also download as ${other.label}`;
+  ui.btnDownloadOther.dataset.format = otherKey;
 }
 
 async function handleSignInClick() {
@@ -145,7 +179,7 @@ function handleSignOutClick() {
   clearSuccess();
   clearSession();
   currentSession = null;
-  lastExportJson = null;
+  lastExportData = null;
   ui.progressWrap.hidden = true;
   showView("signed-out", { focusHeading: true });
 }
@@ -166,6 +200,7 @@ async function handleExportSubmit(event) {
 
   const formData = new FormData(ui.exportForm);
   const includeCompleted = formData.get("includeCompleted") === "yes";
+  const exportFormat = formData.get("exportFormat") === "html" ? "html" : "json";
 
   setFormBusy(true);
   ui.progressWrap.hidden = false;
@@ -189,11 +224,17 @@ async function handleExportSubmit(event) {
       },
     });
 
-    lastExportJson = `${JSON.stringify(exportData, null, 2)}\n`;
-    triggerJsonDownload(lastExportJson, EXPORT_FILENAME);
+    lastExportData = exportData;
+    lastExportFormat = exportFormat;
+
+    const downloadedFormat = serializeAndDownload(exportData, exportFormat);
+    updateDownloadButtons(exportFormat);
 
     ui.progressWrap.hidden = true;
-    ui.successMessage.textContent = formatSummaryText(exportData.summary);
+    ui.successMessage.textContent = formatSummaryText(
+      exportData.summary,
+      downloadedFormat.filename
+    );
     ui.successBanner.hidden = false;
     document.title = "Export Complete | Microsoft To Do Exporter";
   } catch (err) {
@@ -223,8 +264,14 @@ async function init() {
   ui.btnSignOut.addEventListener("click", handleSignOutClick);
   ui.exportForm.addEventListener("submit", handleExportSubmit);
   ui.btnDownloadAgain.addEventListener("click", () => {
-    if (lastExportJson) {
-      triggerJsonDownload(lastExportJson, EXPORT_FILENAME);
+    if (lastExportData) {
+      serializeAndDownload(lastExportData, lastExportFormat);
+    }
+  });
+  ui.btnDownloadOther.addEventListener("click", () => {
+    if (lastExportData) {
+      const otherFormat = ui.btnDownloadOther.dataset.format || "html";
+      serializeAndDownload(lastExportData, otherFormat);
     }
   });
 

@@ -1,11 +1,12 @@
 # Microsoft To Do Exporter
 
-A minimal, single-purpose web app that exports all of your **Microsoft To Do** lists and tasks into a single `todo-export.json` file.
+A minimal, single-purpose web app that exports all of your **Microsoft To Do** lists and tasks into a single `todo-export.json` or readable `todo-export.html` file.
 
 ## How It Works (and Privacy)
 
 - **Strictly read-only:** Requests only `Tasks.Read` (plus `openid` and `profile` to display your signed-in name). It cannot create, modify, or delete any lists or tasks.
-- **Runs entirely in your browser:** After signing in via Microsoft's OAuth 2.0 Authorization Code Flow with PKCE, your browser fetches your lists and tasks directly from Microsoft Graph and builds `todo-export.json` locally. No task data or tokens are ever sent to or stored on a backend server.
+- **Runs entirely in your browser:** After signing in via Microsoft's OAuth 2.0 Authorization Code Flow with PKCE, your browser fetches your lists and tasks directly from Microsoft Graph and builds `todo-export.json` or `todo-export.html` locally. No task data or tokens are ever sent to or stored on a backend server.
+- **Two export formats:** Download structured JSON (`todo-export.json`) for backups/importing, or a clean, self-contained, printable HTML page (`todo-export.html`) for easy reading—plus one-click download of the other format right after exporting.
 - **Zero frontend frameworks:** Plain HTML, CSS, and vanilla JavaScript ES modules. A single tiny Netlify Function (`netlify/functions/config.mts`) exists solely to expose the public `MS_CLIENT_ID` environment variable at `/api/config`.
 
 ## What's Included in `todo-export.json`

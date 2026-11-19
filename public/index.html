@@ -7,7 +7,7 @@
     <title>Microsoft To Do Exporter</title>
     <meta
       name="description"
-      content="Export all of your Microsoft To Do lists and tasks to a local JSON file right from your browser."
+      content="Export all of your Microsoft To Do lists and tasks to a local JSON or readable HTML file right from your browser."
     >
     <link rel="stylesheet" href="/css/styles.css">
     <script type="module" src="/js/app.js"></script>
@@ -34,7 +34,7 @@
           <h1>Microsoft To Do Exporter</h1>
         </div>
         <p class="subtitle">
-          Download every list and task from your Microsoft To Do account as a clean JSON file.
+          Download every list and task from your Microsoft To Do account as a JSON or readable HTML file.
         </p>
       </header>
 
@@ -72,7 +72,7 @@
           <h2 id="signed-out-heading" tabindex="-1">Sign in to export your To Dos</h2>
           <p>
             Sign in with your personal or work/school Microsoft account to export all of your lists,
-            tasks, notes, checklist steps, and links into <code>todo-export.json</code>.
+            tasks, notes, checklist steps, and links into a downloadable JSON or readable HTML file.
           </p>
 
           <div class="info-box">
@@ -135,8 +135,8 @@
             <fieldset class="choice-fieldset">
               <legend>Do you want to include completed To Dos in your output?</legend>
               <p id="completed-hint" class="field-hint">
-                Every list and task will be included in <code>todo-export.json</code>, along with
-                notes, checklist steps, links, and attachment details.
+                Every list and task will be included along with notes, checklist steps, links, and
+                attachment details.
               </p>
 
               <div class="radio-group" aria-describedby="completed-hint">
@@ -162,6 +162,41 @@
                   >
                   <label for="include-completed-yes">
                     <span>Yes — include completed To Dos as well</span>
+                  </label>
+                </div>
+              </div>
+            </fieldset>
+
+            <fieldset class="choice-fieldset">
+              <legend>Choose your export format</legend>
+              <p id="format-hint" class="field-hint">
+                Pick JSON for structured backups or importing into another app, or HTML for a
+                simple, readable page you can open, search, or print.
+              </p>
+
+              <div class="radio-group" aria-describedby="format-hint">
+                <div class="radio-option">
+                  <input
+                    type="radio"
+                    id="format-json"
+                    name="exportFormat"
+                    value="json"
+                    checked
+                  >
+                  <label for="format-json">
+                    <span>JSON (<code>todo-export.json</code>) — complete structured data</span>
+                  </label>
+                </div>
+
+                <div class="radio-option">
+                  <input
+                    type="radio"
+                    id="format-html"
+                    name="exportFormat"
+                    value="html"
+                  >
+                  <label for="format-html">
+                    <span>Readable HTML (<code>todo-export.html</code>) — clean formatted page</span>
                   </label>
                 </div>
               </div>
@@ -208,7 +243,10 @@
               <p id="success-message" class="banner-text"></p>
               <div class="banner-actions">
                 <button id="btn-download-again" type="button" class="btn btn-secondary btn-small">
-                  Download todo-export.json again
+                  Download again
+                </button>
+                <button id="btn-download-other" type="button" class="btn btn-secondary btn-small">
+                  Also download as HTML
                 </button>
               </div>
             </div>
